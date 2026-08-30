@@ -1,0 +1,30 @@
+[package]
+name = "raven-store"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "A graphical front-end for rvn, the Raven Linux package manager: discover, install, update and remove software without a terminal"
+repository = "https://github.com/javanhut/RavenStore"
+
+[[bin]]
+name = "raven-store"
+path = "src/main.rs"
+
+[dependencies]
+# Pinned to the same gtk-rs generation as RavenSettingsUI and RavenFileManager
+# so every Raven app resolves one set of bindings.
+gtk4 = { version = "0.10", features = ["v4_12"] }
+libadwaita = { version = "0.8", features = ["v1_5"] }
+glib = "0.21"
+gio = "0.21"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

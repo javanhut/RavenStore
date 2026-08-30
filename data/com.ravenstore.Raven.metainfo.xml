@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.ravenstore.Raven</id>
+  <name>Raven Store</name>
+  <summary>Discover, install and update software on Raven Linux</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>A graphical front-end for rvn, the Raven package manager. Browse a curated catalogue, search the official repositories and the AUR, install and remove packages, and keep the system up to date — with the same verification and privilege handling as the command line.</p>
+  </description>
+  <launchable type="desktop-id">com.ravenstore.Raven.desktop</launchable>
+  <provides><binary>raven-store</binary></provides>
+  <url type="homepage">https://github.com/javanhut/RavenStore</url>
+</component>
