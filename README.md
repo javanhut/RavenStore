@@ -30,7 +30,11 @@ An account outside the `wheel` group gets a clear message rather than a hang.
 - **Installed** — explicitly installed packages with Open and Remove; the
   Settings page can include dependencies too.
 - **Updates** — what is out of date, with *Update All* or per-package updates.
-  *Check for updates* refreshes the repository databases (needs your password).
+  *Check for updates* refreshes the repository databases as you, no password:
+  rvn syncs a per-user copy when it cannot write the system one, and every
+  check — here or in Raven Settings — reads whichever copy is fresher, so a
+  check in one app is a check in both. The window also watches the database
+  directories and reloads when Settings, a terminal, or rvn changes them.
 - **Wishlist** — packages you hearted, kept in `~/.config/raven/store.toml`.
 - **Settings** — official-repositories-only mode, refresh-on-launch, and buttons
   to run the same operations in a terminal instead.

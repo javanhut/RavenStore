@@ -7,9 +7,13 @@
 //! user process.
 //!
 //! Read-only queries (`list`, `find`, `info`, `update --dry-run
-//! --no-refresh`) run as the user and are collected whole. Anything that
-//! writes — install, remove, update, refresh — is a [`Transaction`], run
-//! under sudo with its events forwarded live over a channel.
+//! --no-refresh`) run as the user and are collected whole. Anything the
+//! user watches happen — install, remove, update, refresh — is a
+//! [`Transaction`] with its events forwarded live over a channel. The ones
+//! that change the system run under sudo; a refresh-for-check does not, since
+//! rvn syncs into a per-user copy of the databases when it cannot write the
+//! system one, and reads whichever copy is fresher on later checks. Raven
+//! Settings checks the same way, so the two never disagree.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -257,6 +261,9 @@ pub struct Transaction {
     pub title: String,
     /// Arguments after `rvn --json -y`.
     pub args: Vec<String>,
+    /// Whether rvn has to run under sudo. Everything that changes the
+    /// system does; a refresh-for-check runs as the user.
+    pub privileged: bool,
 }
 
 impl Transaction {
@@ -267,6 +274,7 @@ impl Transaction {
         Transaction {
             title: format!("Installing {}", join(names)),
             args,
+            privileged: true,
         }
     }
 
@@ -277,6 +285,7 @@ impl Transaction {
         Transaction {
             title: format!("Removing {}", join(names)),
             args,
+            privileged: true,
         }
     }
 
@@ -292,17 +301,22 @@ impl Transaction {
                 format!("Updating {}", join(names))
             },
             args,
+            privileged: true,
         }
     }
 
     /// Refreshes the databases and reports what is out of date, changing
-    /// nothing else.
+    /// nothing else. Runs as the user: when the system sync directory is
+    /// not writable rvn syncs a per-user copy instead, the same one Raven
+    /// Settings fills, and every later check reads whichever copy is
+    /// fresher. No password, and no disagreement between the two apps.
     pub fn refresh(repo_only: bool) -> Transaction {
         let mut args = global(repo_only);
         args.extend(["update".into(), "--dry-run".into()]);
         Transaction {
             title: "Checking for updates".into(),
             args,
+            privileged: false,
         }
     }
 }
@@ -377,32 +391,39 @@ pub fn sudo_cached() -> bool {
         .unwrap_or(false)
 }
 
-/// Starts a transaction under sudo. `password` is fed to sudo on stdin; pass
-/// `None` when [`sudo_cached`] said none is needed.
+/// Starts a transaction: under sudo when it is privileged, as the user
+/// otherwise. `password` is fed to sudo on stdin; pass `None` when
+/// [`sudo_cached`] said none is needed or the transaction is unprivileged.
 pub fn start(tx: &Transaction, password: Option<String>) -> Result<Receiver<Event>> {
     let bin = binary().ok_or_else(|| anyhow!("rvn is not installed"))?;
-    if !super::have("sudo") {
-        bail!("sudo is not installed, so the store cannot install packages");
-    }
 
-    let mut cmd = Command::new("sudo");
-    match &password {
-        // -S reads the password from stdin; an empty prompt keeps stderr
-        // clean; -k forces the check so a stale timestamp does not mask a
-        // wrong password.
-        Some(_) => cmd.args(["-S", "-p", ""]),
-        // Never block on a prompt nobody can see.
-        None => cmd.arg("-n"),
+    let mut cmd = if tx.privileged {
+        if !super::have("sudo") {
+            bail!("sudo is not installed, so the store cannot install packages");
+        }
+        let mut cmd = Command::new("sudo");
+        match &password {
+            // -S reads the password from stdin; an empty prompt keeps stderr
+            // clean; -k forces the check so a stale timestamp does not mask a
+            // wrong password.
+            Some(_) => cmd.args(["-S", "-p", ""]),
+            // Never block on a prompt nobody can see.
+            None => cmd.arg("-n"),
+        };
+        cmd.arg("--").arg(&bin);
+        cmd
+    } else {
+        Command::new(&bin)
     };
-    cmd.arg("--")
-        .arg(&bin)
-        .args(["--json", "-y"])
+    cmd.args(["--json", "-y"])
         .args(&tx.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().context("could not start sudo")?;
+    let mut child = cmd
+        .spawn()
+        .context(if tx.privileged { "could not start sudo" } else { "could not start rvn" })?;
 
     if let Some(mut stdin) = child.stdin.take() {
         if let Some(pw) = password {
@@ -643,5 +664,13 @@ mod tests {
         assert_eq!(many.title, "Removing a and 2 more");
         let all = Transaction::update(&[], true);
         assert_eq!(all.args, vec!["--repo-only", "update"]);
+        assert!(all.privileged);
+    }
+
+    #[test]
+    fn a_refresh_for_check_needs_no_sudo() {
+        let check = Transaction::refresh(false);
+        assert_eq!(check.args, vec!["update", "--dry-run"]);
+        assert!(!check.privileged, "checking changes nothing, so it never asks for a password");
     }
 }

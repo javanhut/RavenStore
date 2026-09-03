@@ -9,9 +9,11 @@ pub mod transaction;
 pub mod widgets;
 pub mod window;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Instant;
 
 use gtk4 as gtk;
 use libadwaita as adw;
@@ -57,6 +59,9 @@ pub struct App {
     nav: RefCell<Option<(gtk::ListBox, gtk::Stack)>>,
     /// A transaction is running; a second one must wait.
     pub busy: std::cell::Cell<bool>,
+    /// When the last reload started, so the database watcher can tell a
+    /// change it has already seen from one that arrived after.
+    reloaded_at: Cell<Option<Instant>>,
 }
 
 impl App {
@@ -134,6 +139,7 @@ impl App {
             }
             st.loading = true;
         }
+        self.reloaded_at.set(Some(Instant::now()));
         self.notify();
         let repo_only = self.repo_only();
         let app = self.clone();
@@ -298,6 +304,7 @@ pub fn run(start_page: &'static str) -> glib::ExitCode {
         listeners: RefCell::new(Vec::new()),
         nav: RefCell::new(None),
         busy: std::cell::Cell::new(false),
+        reloaded_at: Cell::new(None),
     });
 
     gtk_app.connect_activate(move |gtk_app| {
@@ -322,6 +329,7 @@ pub fn run(start_page: &'static str) -> glib::ExitCode {
             app.toasts.add_toast(t);
         }
         app.reload();
+        watch_databases(&app);
         if let Ok(dir) = std::env::var("RAVEN_STORE_SNAPSHOT") {
             snapshot_pages(&app, std::path::PathBuf::from(dir));
         }
@@ -334,6 +342,88 @@ pub fn run(start_page: &'static str) -> glib::ExitCode {
     });
 
     gtk_app.run_with_args::<&str>(&[])
+}
+
+thread_local! {
+    /// Kept alive for the life of the process; a dropped monitor stops.
+    static MONITORS: RefCell<Vec<gio::FileMonitor>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The directories rvn writes when the picture of the system changes: the
+/// system sync databases, the per-user copy an unprivileged check syncs
+/// into, and the local database of what is installed.
+fn watched_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![
+        PathBuf::from("/var/lib/pacman/sync"),
+        PathBuf::from("/var/lib/pacman/local"),
+    ];
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")));
+    if let Some(cache) = cache {
+        dirs.push(cache.join("rvn").join("sync"));
+    }
+    dirs
+}
+
+/// Reloads shortly after any of [`watched_dirs`] changes, so a check made
+/// in Raven Settings, or an update run from a terminal, shows up here
+/// without pressing *Check for updates* again. Bursts of events (an update
+/// touches many files) collapse into one reload; a change the store's own
+/// transaction already reloaded for is skipped.
+fn watch_databases(app: &Rc<App>) {
+    let changed_at: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
+    let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    for dir in watched_dirs() {
+        // The per-user copy may not exist until the first unprivileged
+        // check; creating it early costs nothing and lets it be watched.
+        if dir.starts_with(std::env::var_os("HOME").unwrap_or_default()) {
+            let _ = std::fs::create_dir_all(&dir);
+        }
+        let monitor = match gio::File::for_path(&dir)
+            .monitor_directory(gio::FileMonitorFlags::NONE, gio::Cancellable::NONE)
+        {
+            Ok(m) => {
+                tracing::debug!("watching {}", dir.display());
+                m
+            }
+            Err(e) => {
+                tracing::debug!("not watching {}: {e}", dir.display());
+                continue;
+            }
+        };
+        let app = app.clone();
+        let changed_at = changed_at.clone();
+        let pending = pending.clone();
+        monitor.connect_changed(move |_, _, _, _| {
+            changed_at.set(Some(Instant::now()));
+            if let Some(id) = pending.borrow_mut().take() {
+                id.remove();
+            }
+            let app = app.clone();
+            let changed_at = changed_at.clone();
+            let pending2 = pending.clone();
+            let id = glib::timeout_add_local_once(std::time::Duration::from_secs(3), move || {
+                pending2.borrow_mut().take();
+                // Our own transaction reloads when it exits.
+                if app.busy.get() {
+                    return;
+                }
+                let stale = match (changed_at.get(), app.reloaded_at.get()) {
+                    (Some(changed), Some(reloaded)) => changed > reloaded,
+                    (Some(_), None) => true,
+                    (None, _) => false,
+                };
+                if stale {
+                    tracing::info!("package databases changed on disk; reloading");
+                    app.reload();
+                }
+            });
+            *pending.borrow_mut() = Some(id);
+        });
+        MONITORS.with(|m| m.borrow_mut().push(monitor));
+    }
 }
 
 /// Ask a yes/no question. `on_answer(true)` when confirmed.

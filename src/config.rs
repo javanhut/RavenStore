@@ -75,9 +75,9 @@ pub struct StoreConfig {
     /// Skip the AUR entirely: only official repositories are searched or
     /// installed from.
     pub repo_only: bool,
-    /// Refresh the repository databases when the store opens. Needs your
-    /// password, so it is off by default; the databases are refreshed
-    /// before any install anyway.
+    /// Refresh the repository databases when the store opens. Runs as the
+    /// user, so no password, but it hits the mirrors at every launch and the
+    /// databases are refreshed before any install anyway; off by default.
     pub refresh_on_start: bool,
     /// Show packages installed as dependencies on the Installed page.
     pub show_dependencies: bool,

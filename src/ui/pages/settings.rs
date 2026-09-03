@@ -30,7 +30,7 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
     list.append(&repo_only);
     let refresh = adw::SwitchRow::builder()
         .title("Refresh repositories when the store opens")
-        .subtitle("Asks for your password at launch. Off, the store uses the databases already on disk and refreshes before any install.")
+        .subtitle("Syncs the databases as you, without a password. Off, the store uses whatever the last check here or in Settings synced, and refreshes before any install.")
         .active(app.config.borrow().refresh_on_start)
         .build();
     {

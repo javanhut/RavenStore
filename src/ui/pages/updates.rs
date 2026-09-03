@@ -35,9 +35,7 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
     row.append(&spinner);
     let check = gtk::Button::with_label("Check for updates");
     check.set_valign(gtk::Align::Center);
-    check.set_tooltip_text(Some(
-        "Refresh the repository databases (needs your password)",
-    ));
+    check.set_tooltip_text(Some("Refresh the repository databases"));
     {
         let app2 = app.clone();
         check.connect_clicked(move |_| app2.refresh());
@@ -90,7 +88,7 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
         let n = u.candidates.len();
         if n == 0 {
             headline.set_text("System is up to date");
-            detail.set_text("Everything installed is at its latest known version. Check for updates to refresh the repositories.");
+            detail.set_text("Everything installed is at its latest known version. Checking here or in Settings refreshes the repositories for both.");
             icon.set_icon_name(Some("object-select-symbolic"));
         } else {
             headline.set_text(&format!(

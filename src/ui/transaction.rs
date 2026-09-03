@@ -1,8 +1,10 @@
-//! Running one privileged rvn transaction with a live progress dialog.
+//! Running one rvn transaction with a live progress dialog.
 //!
-//! Flow: check whether sudo needs a password → ask if so → start rvn under
-//! sudo → drain its event stream on the main loop → reload the store's view
-//! of the system when it exits.
+//! Flow: for a privileged transaction, check whether sudo needs a password
+//! and ask if so, then start rvn under sudo; an unprivileged one (a
+//! refresh-for-check) starts straight away as the user. Either way, drain
+//! its event stream on the main loop and reload the store's view of the
+//! system when it exits.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -33,6 +35,10 @@ struct View {
 }
 
 pub fn run(app: &Rc<App>, tx: Transaction) {
+    if !tx.privileged {
+        launch(app, tx, None, 0);
+        return;
+    }
     let app = app.clone();
     spawn(rvn::sudo_cached, move |cached| {
         if cached {
