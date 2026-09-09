@@ -37,8 +37,9 @@ run = [
 ]
 
 [commands.install]
-desc = "Install raven-store and its desktop entry (may need sudo)"
+desc = "Install raven-store and its desktop entry"
 dep = ["build"]
+escalate = true
 run = [
   "install -Dm755 {{target}} {{bindir}}/{{binary}}",
   "install -Dm644 data/{{app_id}}.desktop {{datadir}}/applications/{{app_id}}.desktop",
@@ -50,6 +51,7 @@ run = [
 
 [commands.uninstall]
 desc = "Remove raven-store"
+escalate = true
 run = [
   "rm -f {{bindir}}/{{binary}}",
   "rm -f {{datadir}}/applications/{{app_id}}.desktop",
