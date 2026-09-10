@@ -2,21 +2,25 @@
 //!
 //! The store never links rvn in: it runs the binary and reads the JSON
 //! event stream rvn emits on stdout. That keeps one code path for
-//! everything (the terminal and the store see the same events) and lets a
-//! privileged transaction run under `sudo` while the window stays a normal
-//! user process.
+//! everything (the terminal and the store see the same events), and the
+//! window stays a normal user process throughout: rvn itself hands anything
+//! that needs root to rvnd, the root daemon on `/run/rvn/ctl`, and relays
+//! the daemon's events on stdout unchanged. No sudo, no password dialog.
 //!
 //! Read-only queries (`list`, `find`, `info`, `update --dry-run
 //! --no-refresh`) run as the user and are collected whole. Anything the
 //! user watches happen — install, remove, update, refresh — is a
-//! [`Transaction`] with its events forwarded live over a channel. The ones
-//! that change the system run under sudo; a refresh-for-check does not, since
-//! rvn syncs into a per-user copy of the databases when it cannot write the
-//! system one, and reads whichever copy is fresher on later checks. Raven
-//! Settings checks the same way, so the two never disagree.
+//! [`Transaction`] with its events forwarded live over a channel. rvn
+//! sends every one of them to rvnd when a daemon is reachable; the store
+//! only insists on one for the transactions that change the system. A
+//! refresh-for-check may also run in-process, as the user, when there is
+//! no daemon: rvn then syncs into a per-user copy of the databases, and
+//! reads whichever copy is fresher on later checks. Raven Settings checks
+//! the same way, so the two never disagree.
 
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 
@@ -133,8 +137,8 @@ impl Updates {
     }
 }
 
-/// Where rvn lives. Resolved once so sudo gets an absolute path and cannot
-/// be pointed elsewhere by a modified `PATH`.
+/// Where rvn lives, resolved from `PATH` so a build directory put first
+/// on it is what the store runs.
 pub fn binary() -> Option<PathBuf> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     std::env::split_paths(&path)
@@ -253,7 +257,7 @@ pub fn check_updates(repo_only: bool) -> Result<Updates> {
         .unwrap_or_default())
 }
 
-// ---- privileged transactions -------------------------------------------
+// ---- transactions --------------------------------------------------------
 
 /// One thing the user asked the system to do.
 #[derive(Debug, Clone)]
@@ -261,8 +265,10 @@ pub struct Transaction {
     pub title: String,
     /// Arguments after `rvn --json -y`.
     pub args: Vec<String>,
-    /// Whether rvn has to run under sudo. Everything that changes the
-    /// system does; a refresh-for-check runs as the user.
+    /// Whether the store checks for a daemon before starting rvn. rvn
+    /// itself uses rvnd whenever it can reach one, but only the
+    /// transactions that change the system are lost without it; a
+    /// refresh-for-check without one still runs, in-process as the user.
     pub privileged: bool,
 }
 
@@ -306,10 +312,14 @@ impl Transaction {
     }
 
     /// Refreshes the databases and reports what is out of date, changing
-    /// nothing else. Runs as the user: when the system sync directory is
-    /// not writable rvn syncs a per-user copy instead, the same one Raven
-    /// Settings fills, and every later check reads whichever copy is
-    /// fresher. No password, and no disagreement between the two apps.
+    /// nothing else. Goes to rvnd when one is reachable, like everything
+    /// rvn does; without a daemon it runs as the user, and rvn syncs a
+    /// per-user copy of the databases instead of the system one — the
+    /// same copy Raven Settings fills, so every later check reads
+    /// whichever is fresher and the two apps never disagree. With a
+    /// daemon up and the user outside its group, rvn answers with the
+    /// "not allowed to use rvnd" failure rather than that fallback; that
+    /// is rvn's call, and it reaches the dialog like any other failure.
     pub fn refresh(repo_only: bool) -> Transaction {
         let mut args = global(repo_only);
         args.extend(["update".into(), "--dry-run".into()]);
@@ -375,65 +385,55 @@ pub enum Event {
     /// The process exited. Always the last event.
     Exited {
         success: bool,
-        auth_failed: bool,
     },
 }
 
-/// Whether sudo will run without asking for a password right now.
-pub fn sudo_cached() -> bool {
-    Command::new("sudo")
-        .args(["-n", "true"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+/// The socket rvn talks to rvnd on. `RVN_SOCKET` points rvn at another
+/// daemon for development, so the store looks where rvn will look.
+fn daemon_socket() -> PathBuf {
+    std::env::var_os("RVN_SOCKET")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/run/rvn/ctl"))
 }
 
-/// Starts a transaction: under sudo when it is privileged, as the user
-/// otherwise. `password` is fed to sudo on stdin; pass `None` when
-/// [`sudo_cached`] said none is needed or the transaction is unprivileged.
-pub fn start(tx: &Transaction, password: Option<String>) -> Result<Receiver<Event>> {
-    let bin = binary().ok_or_else(|| anyhow!("rvn is not installed"))?;
-
-    let mut cmd = if tx.privileged {
-        if !super::have("sudo") {
-            bail!("sudo is not installed, so the store cannot install packages");
-        }
-        let mut cmd = Command::new("sudo");
-        match &password {
-            // -S reads the password from stdin; an empty prompt keeps stderr
-            // clean; -k forces the check so a stale timestamp does not mask a
-            // wrong password.
-            Some(_) => cmd.args(["-S", "-p", ""]),
-            // Never block on a prompt nobody can see.
-            None => cmd.arg("-n"),
-        };
-        cmd.arg("--").arg(&bin);
-        cmd
-    } else {
-        Command::new(&bin)
-    };
-    cmd.args(["--json", "-y"])
-        .args(&tx.args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .context(if tx.privileged { "could not start sudo" } else { "could not start rvn" })?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        if let Some(pw) = password {
-            let _ = stdin.write_all(pw.as_bytes());
-            let _ = stdin.write_all(b"\n");
-        }
-        // Closing stdin: rvn -y never reads it, and sudo gets EOF instead of
-        // hanging if the password was wrong.
-        drop(stdin);
+/// Why a privileged transaction cannot start right now, if it cannot.
+///
+/// rvn only explains a missing daemon on the terminal; in `--json` mode it
+/// falls back to running in-process as the user, which fails partway with
+/// a permission error that names sudo. Checking here gives the person the
+/// same advice the terminal would. A socket that refuses us is left to rvn,
+/// whose `failed` event already says which group to join.
+fn daemon_unavailable(socket: &Path) -> Option<String> {
+    use std::io::ErrorKind::{ConnectionRefused, NotFound};
+    match UnixStream::connect(socket) {
+        Err(e) if matches!(e.kind(), NotFound | ConnectionRefused) => Some(
+            "rvnd is not running, so the store cannot change packages. Start it with `sudo raven-rc start rvnd`, or use `sudo rvn` in a terminal."
+                .into(),
+        ),
+        _ => None,
     }
+}
+
+/// Starts a transaction as the user. A privileged one is handed to rvnd by
+/// rvn itself, so the only check here is that there is a daemon to hand it
+/// to.
+pub fn start(tx: &Transaction) -> Result<Receiver<Event>> {
+    let bin = binary().ok_or_else(|| anyhow!("rvn is not installed"))?;
+    if tx.privileged {
+        if let Some(why) = daemon_unavailable(&daemon_socket()) {
+            bail!("{why}");
+        }
+    }
+
+    let mut child = Command::new(&bin)
+        .args(["--json", "-y"])
+        .args(&tx.args)
+        // rvn -y never reads stdin.
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("could not start rvn")?;
 
     let (tx_events, rx) = mpsc::channel();
     let stdout = child.stdout.take().expect("stdout piped");
@@ -449,26 +449,17 @@ pub fn start(tx: &Transaction, password: Option<String>) -> Result<Receiver<Even
     };
 
     std::thread::spawn(move || {
-        let saw_banner = out_thread.join().unwrap_or(false);
-        let auth_text = err_thread.join().unwrap_or(false);
-        let status = child.wait();
-        let success = status.map(|s| s.success()).unwrap_or(false);
-        // sudo rejecting the password looks like: no rvn output at all, and
-        // sudo's own complaint on stderr.
-        let auth_failed = !success && !saw_banner && auth_text;
-        let _ = tx_events.send(Event::Exited {
-            success,
-            auth_failed,
-        });
+        let _ = out_thread.join();
+        let _ = err_thread.join();
+        let success = child.wait().map(|s| s.success()).unwrap_or(false);
+        let _ = tx_events.send(Event::Exited { success });
     });
 
     Ok(rx)
 }
 
-/// Parses stdout into events. Returns whether rvn ever spoke, which is how
-/// a sudo failure is told apart from an rvn failure.
-fn read_events(stdout: std::process::ChildStdout, send: Sender<Event>) -> bool {
-    let mut spoke = false;
+/// Parses stdout into events.
+fn read_events(stdout: std::process::ChildStdout, send: Sender<Event>) {
     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
         let Ok(v) = serde_json::from_str::<Value>(&line) else {
             // makepkg or a scriptlet writing to stdout: show it as a log.
@@ -477,7 +468,6 @@ fn read_events(stdout: std::process::ChildStdout, send: Sender<Event>) -> bool {
             }
             continue;
         };
-        spoke = true;
         let text = |key: &str| v[key].as_str().unwrap_or("").to_string();
         let event = match v["event"].as_str().unwrap_or("") {
             "banner" => continue,
@@ -511,32 +501,16 @@ fn read_events(stdout: std::process::ChildStdout, send: Sender<Event>) -> bool {
             break;
         }
     }
-    spoke
 }
 
-/// Forwards stderr as log lines. Returns whether sudo complained about the
-/// password.
-fn read_log(stderr: std::process::ChildStderr, send: Sender<Event>) -> bool {
-    let mut auth = false;
+/// Forwards stderr as log lines.
+fn read_log(stderr: std::process::ChildStderr, send: Sender<Event>) {
     for line in BufReader::new(stderr).lines().map_while(Result::ok) {
         let clean = strip_ansi(line.trim_end());
-        if clean.contains("incorrect password")
-            || clean.starts_with("Sorry, try again")
-            || clean.contains("a password is required")
-        {
-            auth = true;
-        }
-        if clean.contains("is not in the sudoers file") || clean.contains("not allowed to execute")
-        {
-            let _ = send.send(Event::Failed(
-                "Your account is not allowed to use sudo, so the store cannot change packages. Ask an administrator to add you to the wheel group.".into(),
-            ));
-        }
         if !clean.trim().is_empty() {
             let _ = send.send(Event::Log(clean));
         }
     }
-    auth
 }
 
 /// Removes ANSI escape sequences, which makepkg and compilers emit freely.
@@ -599,9 +573,9 @@ mod tests {
         assert_eq!(u.candidates[0].new_version, "2");
     }
 
-    /// The event pipeline end to end, with a shell standing in for
-    /// `sudo rvn`: JSON on stdout becomes typed events, stderr becomes log
-    /// lines, and the exit lands last.
+    /// The event pipeline end to end, with a shell standing in for rvn:
+    /// JSON on stdout becomes typed events, stderr becomes log lines, and
+    /// the exit lands last.
     #[test]
     fn child_output_becomes_events_in_order() {
         let mut child = Command::new("sh")
@@ -614,10 +588,8 @@ mod tests {
         let (send, rx) = mpsc::channel();
         let out = child.stdout.take().unwrap();
         let err = child.stderr.take().unwrap();
-        let spoke = read_events(out, send.clone());
-        let auth = read_log(err, send);
-        assert!(spoke, "rvn's banner marks the stream as rvn's");
-        assert!(!auth);
+        read_events(out, send.clone());
+        read_log(err, send);
         assert!(child.wait().unwrap().success());
 
         let events: Vec<Event> = rx.try_iter().collect();
@@ -642,17 +614,28 @@ mod tests {
             .any(|e| matches!(e, Event::Log(l) if l == "makepkg: building")));
     }
 
+    /// The store, not rvn, is the one to say a daemon is missing: rvn in
+    /// `--json` mode is silent about it and fails later for another reason.
     #[test]
-    fn sudo_rejection_is_recognised() {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg("echo 'Sorry, try again.' >&2; echo 'sudo: 1 incorrect password attempt' >&2")
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let (send, _rx) = mpsc::channel();
-        assert!(read_log(child.stderr.take().unwrap(), send));
-        assert!(child.wait().unwrap().success());
+    fn a_missing_daemon_is_explained_up_front() {
+        let dir = std::env::temp_dir().join(format!("raven-store-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("ctl");
+
+        let why = daemon_unavailable(&socket).expect("nothing is listening");
+        assert!(why.contains("rvnd is not running"), "{why}");
+        assert!(
+            why.contains("raven-rc start rvnd"),
+            "the message says how to fix it: {why}"
+        );
+
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        assert!(
+            daemon_unavailable(&socket).is_none(),
+            "a listening socket is the daemon"
+        );
+        drop(listener);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -668,9 +651,12 @@ mod tests {
     }
 
     #[test]
-    fn a_refresh_for_check_needs_no_sudo() {
+    fn a_refresh_for_check_needs_no_daemon() {
         let check = Transaction::refresh(false);
         assert_eq!(check.args, vec!["update", "--dry-run"]);
-        assert!(!check.privileged, "checking changes nothing, so it never asks for a password");
+        assert!(
+            !check.privileged,
+            "checking changes nothing, so it can run without rvnd"
+        );
     }
 }

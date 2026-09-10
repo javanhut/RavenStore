@@ -262,7 +262,7 @@ impl App {
         self.update(&[]);
     }
 
-    /// Refresh the databases (needs your password) and re-check.
+    /// Refresh the databases as the user and re-check.
     pub fn refresh(self: &Rc<Self>) {
         self.run(Transaction::refresh(self.repo_only()));
     }
@@ -450,37 +450,6 @@ pub fn confirm(
     d.set_close_response("cancel");
     d.connect_response(None, move |_, r| on_answer(r == "ok"));
     d.present(Some(parent));
-}
-
-/// Ask for the user's password. `on_answer(None)` when cancelled.
-pub fn ask_password(
-    parent: &impl IsA<gtk::Widget>,
-    heading: &str,
-    body: &str,
-    on_answer: impl Fn(Option<String>) + 'static,
-) {
-    let d = adw::AlertDialog::new(Some(heading), Some(body));
-    let entry = gtk::PasswordEntry::builder()
-        .placeholder_text("Password")
-        .show_peek_icon(true)
-        .activates_default(true)
-        .build();
-    d.set_extra_child(Some(&entry));
-    d.add_response("cancel", "Cancel");
-    d.add_response("ok", "Authenticate");
-    d.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
-    d.set_default_response(Some("ok"));
-    d.set_close_response("cancel");
-    let e2 = entry.clone();
-    d.connect_response(None, move |_, r| {
-        if r == "ok" {
-            on_answer(Some(e2.text().to_string()));
-        } else {
-            on_answer(None);
-        }
-    });
-    d.present(Some(parent));
-    entry.grab_focus();
 }
 
 /// Development aid: with `RAVEN_STORE_SNAPSHOT=<dir>`, render every page

@@ -1,10 +1,11 @@
 //! Running one rvn transaction with a live progress dialog.
 //!
-//! Flow: for a privileged transaction, check whether sudo needs a password
-//! and ask if so, then start rvn under sudo; an unprivileged one (a
-//! refresh-for-check) starts straight away as the user. Either way, drain
-//! its event stream on the main loop and reload the store's view of the
-//! system when it exits.
+//! Flow: start rvn as the user — it hands the work to rvnd itself when a
+//! daemon is reachable, and a refresh-for-check can run in-process when
+//! none is — then drain its event stream on the main loop and reload the
+//! store's view of the system when it exits. A transaction that changes
+//! the system has nowhere to go without a daemon, so that is reported
+//! before anything starts.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,7 +15,7 @@ use gtk4 as gtk;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use super::{ask_password, spawn, App};
+use super::App;
 use crate::backend::human_bytes;
 use crate::backend::rvn::{self, Event, Transaction};
 
@@ -35,45 +36,24 @@ struct View {
 }
 
 pub fn run(app: &Rc<App>, tx: Transaction) {
-    if !tx.privileged {
-        launch(app, tx, None, 0);
-        return;
-    }
-    let app = app.clone();
-    spawn(rvn::sudo_cached, move |cached| {
-        if cached {
-            launch(&app, tx, None, 0);
-        } else {
-            ask(&app, tx, 0, None);
-        }
-    });
-}
-
-fn ask(app: &Rc<App>, tx: Transaction, attempt: u32, complaint: Option<&str>) {
-    let heading = "Authentication required";
-    let body = match complaint {
-        Some(c) => format!("{c}\n\n{} needs your password.", tx.title),
-        None => format!("{} needs your password. Raven Store runs rvn with sudo, the same way the terminal does.", tx.title),
-    };
-    let app2 = app.clone();
-    ask_password(&app.window(), heading, &body, move |answer| match answer {
-        Some(pw) if !pw.is_empty() => launch(&app2, tx.clone(), Some(pw), attempt),
-        _ => app2.toast("Cancelled"),
-    });
-}
-
-fn launch(app: &Rc<App>, tx: Transaction, password: Option<String>, attempt: u32) {
-    let rx = match rvn::start(&tx, password) {
+    let rx = match rvn::start(&tx) {
         Ok(rx) => rx,
         Err(e) => {
-            app.error("Could not start rvn", &e);
+            // The reason carries advice (start rvnd, join the group), which
+            // a toast would cut off.
+            tracing::warn!("could not start rvn: {e:#}");
+            let d = adw::AlertDialog::new(Some("Could not start rvn"), Some(&e.to_string()));
+            d.add_response("ok", "OK");
+            d.set_default_response(Some("ok"));
+            d.set_close_response("ok");
+            d.present(Some(&app.window()));
             return;
         }
     };
     app.busy.set(true);
     let view = Rc::new(build_view(app, &tx));
     view.dialog.present(Some(&app.window()));
-    poll(app.clone(), tx, view, rx, attempt);
+    poll(app.clone(), tx, view, rx);
 }
 
 fn build_view(app: &Rc<App>, tx: &Transaction) -> View {
@@ -312,29 +292,11 @@ impl View {
     }
 }
 
-fn poll(app: Rc<App>, tx: Transaction, view: Rc<View>, rx: Receiver<Event>, attempt: u32) {
+fn poll(app: Rc<App>, tx: Transaction, view: Rc<View>, rx: Receiver<Event>) {
     glib::timeout_add_local(std::time::Duration::from_millis(40), move || loop {
         match rx.try_recv() {
-            Ok(Event::Exited {
-                success,
-                auth_failed,
-            }) => {
+            Ok(Event::Exited { success }) => {
                 app.busy.set(false);
-                if auth_failed {
-                    view.dialog.set_can_close(true);
-                    view.dialog.close();
-                    if attempt + 1 >= 3 {
-                        app.toast("Too many failed password attempts");
-                    } else {
-                        ask(
-                            &app,
-                            tx.clone(),
-                            attempt + 1,
-                            Some("That password was not accepted."),
-                        );
-                    }
-                    return glib::ControlFlow::Break;
-                }
                 let failure = view.failure.borrow().clone();
                 if success && failure.is_none() {
                     let done = match tx.args.first().map(String::as_str) {

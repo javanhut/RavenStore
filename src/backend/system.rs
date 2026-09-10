@@ -20,9 +20,11 @@ pub fn os_release() -> OsRelease {
     }
 }
 
-/// `sudo rvn ...` in the user's terminal, for people who want to watch.
+/// `rvn ...` in the user's terminal, for people who want to watch. rvn
+/// shows its plan and asks before applying it, as it does for anyone at a
+/// terminal, and goes through rvnd for the root part.
 pub fn launch_in_terminal(terminal: &str, args: &[&str]) -> anyhow::Result<()> {
-    let mut cmd: Vec<String> = vec!["sudo".into(), "rvn".into()];
+    let mut cmd: Vec<String> = vec!["rvn".into()];
     cmd.extend(args.iter().map(|a| a.to_string()));
     let script = format!(
         "{}; echo; echo 'Done. Press Enter to close.'; read _",
