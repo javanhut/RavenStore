@@ -12,11 +12,11 @@ use crate::catalog::Entry;
 
 /// A page: title, subtitle, and a vertical content box inside a scroller.
 pub fn page(title: &str, subtitle: &str) -> (gtk::ScrolledWindow, gtk::Box) {
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 14);
-    content.set_margin_start(26);
-    content.set_margin_end(26);
-    content.set_margin_top(18);
-    content.set_margin_bottom(26);
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 16);
+    content.set_margin_start(30);
+    content.set_margin_end(30);
+    content.set_margin_top(22);
+    content.set_margin_bottom(30);
 
     if !title.is_empty() {
         let head = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -144,8 +144,8 @@ pub fn flow(max_per_line: u32) -> gtk::FlowBox {
     fb.set_homogeneous(true);
     fb.set_min_children_per_line(1);
     fb.set_max_children_per_line(max_per_line);
-    fb.set_column_spacing(12);
-    fb.set_row_spacing(12);
+    fb.set_column_spacing(14);
+    fb.set_row_spacing(14);
     fb.set_valign(gtk::Align::Start);
     fb
 }

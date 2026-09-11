@@ -1,5 +1,6 @@
-//! The shell of the window: sidebar with navigation, header with search, and
-//! a stack of pages. Same bones as Raven Settings so the two feel like one
+//! The shell of the window: sidebar with search and navigation, a header
+//! that names the page, and a stack of pages.
+//! Same bones as Raven Settings so the two feel like one
 //! desktop.
 
 use std::cell::RefCell;
@@ -34,7 +35,8 @@ pub fn build(
     // ---- sidebar --------------------------------------------------------
     let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 10);
     sidebar.add_css_class("sidebar");
-    sidebar.append(&brand());
+    let brand_box = brand();
+    sidebar.append(&brand_box);
 
     let nav = gtk::ListBox::new();
     nav.add_css_class("navigation-sidebar");
@@ -106,21 +108,18 @@ pub fn build(
         });
     }
 
-    // ---- header: search -------------------------------------------------
-    let search_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    search_box.add_css_class("search-box");
-    search_box.set_halign(gtk::Align::Center);
-    search_box.set_hexpand(true);
-    search_box.append(&gtk::Image::from_icon_name("system-search-symbolic"));
-    let search = gtk::Entry::builder()
-        .placeholder_text("Search apps, packages, and more…")
+    // ---- sidebar: search --------------------------------------------------
+    // At the top of the sidebar, where the App Store keeps it, rather than
+    // in the header: the header names the page, the sidebar finds one.
+    let search_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    search_box.add_css_class("sidebar-search");
+    let search = gtk::SearchEntry::builder()
+        .placeholder_text("Search")
         .hexpand(true)
-        .width_chars(36)
         .build();
+    search.add_css_class("search");
     search_box.append(&search);
-    let kbd = gtk::Label::new(Some("Ctrl+K"));
-    kbd.add_css_class("kbd");
-    search_box.append(&kbd);
+    sidebar.insert_child_after(&search_box, Some(&brand_box));
 
     // Debounced: a query runs 350 ms after the last keystroke, or on Enter.
     let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
@@ -170,8 +169,27 @@ pub fn build(
         });
     }
 
+    // The header names the page. Bound to the stack rather than the nav so
+    // pages the nav does not list — search, a package's detail — are named
+    // too.
+    let title = adw::WindowTitle::new("Raven Store", "");
+    {
+        let title = title.clone();
+        stack.connect_visible_child_name_notify(move |stack| {
+            let name = stack.visible_child_name().unwrap_or_default();
+            let heading = pages::all()
+                .into_iter()
+                .find(|p| p.id == name.as_str())
+                .map(|p| p.title.to_string())
+                .unwrap_or_else(|| match name.as_str() {
+                    "search" => "Search".to_string(),
+                    _ => "Raven Store".to_string(),
+                });
+            title.set_title(&heading);
+        });
+    }
     let header = adw::HeaderBar::builder()
-        .title_widget(&search_box)
+        .title_widget(&title)
         .show_title(true)
         .build();
     let show_sidebar = gtk::ToggleButton::builder()
@@ -294,8 +312,18 @@ fn brand() -> gtk::Box {
 }
 
 fn nav_row(info: &PageInfo) -> (gtk::ListBoxRow, gtk::Label) {
-    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    bx.append(&gtk::Image::from_icon_name(info.icon));
+    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    let tile = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    tile.add_css_class("nav-icon");
+    tile.add_css_class(info.tint);
+    tile.set_halign(gtk::Align::Center);
+    tile.set_valign(gtk::Align::Center);
+    let icon = gtk::Image::from_icon_name(info.icon);
+    icon.set_halign(gtk::Align::Center);
+    icon.set_valign(gtk::Align::Center);
+    icon.set_hexpand(true);
+    tile.append(&icon);
+    bx.append(&tile);
     let l = gtk::Label::new(Some(info.title));
     l.set_xalign(0.0);
     l.set_hexpand(true);

@@ -22,6 +22,10 @@ pub struct PageInfo {
     pub build: fn(&Rc<App>) -> gtk::Widget,
     /// Settings sits below a separator.
     pub separated: bool,
+    /// The colour of the icon tile beside the title in the sidebar; see
+    /// `.nav-icon` in `data/raven-glass.css`. Names a domain, never the
+    /// accent, so the sidebar stays legible under any accent.
+    pub tint: &'static str,
 }
 
 pub fn all() -> Vec<PageInfo> {
@@ -32,6 +36,7 @@ pub fn all() -> Vec<PageInfo> {
             icon: "go-home-symbolic",
             build: discover::build,
             separated: false,
+            tint: "blue",
         },
         PageInfo {
             id: "categories",
@@ -39,6 +44,7 @@ pub fn all() -> Vec<PageInfo> {
             icon: "view-grid-symbolic",
             build: categories::build,
             separated: false,
+            tint: "orange",
         },
         PageInfo {
             id: "installed",
@@ -46,6 +52,7 @@ pub fn all() -> Vec<PageInfo> {
             icon: "folder-download-symbolic",
             build: installed::build,
             separated: false,
+            tint: "green",
         },
         PageInfo {
             id: "updates",
@@ -53,6 +60,7 @@ pub fn all() -> Vec<PageInfo> {
             icon: "view-refresh-symbolic",
             build: updates::build,
             separated: false,
+            tint: "gray",
         },
         PageInfo {
             id: "wishlist",
@@ -60,6 +68,7 @@ pub fn all() -> Vec<PageInfo> {
             icon: "starred-symbolic",
             build: wishlist::build,
             separated: false,
+            tint: "pink",
         },
         PageInfo {
             id: "settings",
@@ -67,6 +76,7 @@ pub fn all() -> Vec<PageInfo> {
             icon: "emblem-system-symbolic",
             build: settings::build,
             separated: true,
+            tint: "graphite",
         },
     ]
 }
