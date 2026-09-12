@@ -289,12 +289,18 @@ fn remember(app: &App, last_page: &RefCell<String>) {
 fn brand() -> gtk::Box {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     bx.add_css_class("brand");
-    let icon = gtk::Image::from_icon_name("com.ravenstore.Raven");
-    if !gtk::gdk::Display::default()
-        .map(|d| gtk::IconTheme::for_display(&d).has_icon("com.ravenstore.Raven"))
-        .unwrap_or(false)
-    {
-        icon.set_icon_name(Some("system-software-install-symbolic"));
+    // The masthead carries the Raven mark -- the distro's logo, as named by
+    // /etc/os-release -- with the app's own icon and then a stock one as the
+    // fallbacks for a system that has not installed it.
+    let icon = gtk::Image::from_icon_name("system-software-install-symbolic");
+    if let Some(display) = gtk::gdk::Display::default() {
+        let theme = gtk::IconTheme::for_display(&display);
+        for name in ["raven-logo", "com.ravenstore.Raven"] {
+            if theme.has_icon(name) {
+                icon.set_icon_name(Some(name));
+                break;
+            }
+        }
     }
     bx.append(&icon);
     let text = gtk::Box::new(gtk::Orientation::Vertical, 0);
