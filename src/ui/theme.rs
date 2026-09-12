@@ -21,7 +21,7 @@ pub const BASE_CSS: &str = concat!(
 .app-card:hover { background-color: alpha(#ffffff, 0.09); border-color: alpha(#ffffff, 0.14); }
 .app-card:active { background-color: alpha(#ffffff, 0.12); }
 .app-card .app-name { font-weight: 600; font-size: 14px; letter-spacing: -0.1px; }
-.app-card .app-kind, .app-kind { font-size: 12px; color: alpha(@window_fg_color, 0.55); }
+.app-card .app-kind, .app-kind { font-size: 12.5px; letter-spacing: 0.1px; color: alpha(@window_fg_color, 0.70); }
 .app-card .app-icon { -gtk-icon-size: 40px; }
 .icon-well { background-color: alpha(#ffffff, 0.07); border-radius: 12px; padding: 8px; box-shadow: inset 0 1px 0 alpha(#ffffff, 0.06); }
 .icon-well image { color: @accent_bg_color; }
@@ -37,7 +37,7 @@ pub const BASE_CSS: &str = concat!(
 .app-card button.action { min-height: 28px; padding: 0 12px; border-radius: 8px; font-size: 12px; }
 .app-card button.heart, button.heart {
   min-height: 24px; min-width: 24px; padding: 2px 6px; border-radius: 999px;
-  font-size: 16px; color: alpha(@window_fg_color, 0.5);
+  font-size: 16px; color: alpha(@window_fg_color, 0.60);
 }
 button.heart.on { color: #F7768E; }
 
@@ -77,9 +77,9 @@ carouselindicatordots { margin-top: 4px; }
 /* Side panel on Discover */
 .side-panel { min-width: 280px; }
 .pick-row { padding: 6px 2px; }
-.pick-row .rank { min-width: 18px; color: alpha(@window_fg_color, 0.55); font-weight: 700; }
+.pick-row .rank { min-width: 18px; color: alpha(@window_fg_color, 0.70); font-weight: 700; }
 .update-row { padding: 8px 4px; }
-.update-row .version { font-size: 12px; color: alpha(@window_fg_color, 0.55); }
+.update-row .version { font-size: 12.5px; letter-spacing: 0.1px; color: alpha(@window_fg_color, 0.70); }
 
 /* Transaction dialog */
 .tx-stage { font-weight: 600; }
@@ -93,7 +93,7 @@ carouselindicatordots { margin-top: 4px; }
 .footer-note { padding: 10px 0; }
 .footer-note image { color: @accent_bg_color; }
 .footer-note .t { font-weight: 600; font-size: 12px; color: @accent_bg_color; }
-.footer-note .s { font-size: 11px; color: alpha(@window_fg_color, 0.55); }
+.footer-note .s { font-size: 11.5px; letter-spacing: 0.1px; color: alpha(@window_fg_color, 0.70); }
 "#
 );
 
