@@ -294,7 +294,14 @@ pub fn spawn<T: Send + 'static>(
 
 pub fn run(start_page: &'static str) -> glib::ExitCode {
     adw::init().expect("could not initialise GTK: is a Wayland display available?");
-    let gtk_app = adw::Application::builder().application_id(APP_ID).build();
+    // `NON_UNIQUE`: every launch is its own process and its own window, so
+    // "open the store again" opens another store rather than raising the one
+    // already up. The bookkeeping in `activate` still guards against a second
+    // activation, which cannot happen now, but costs nothing.
+    let gtk_app = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
     let app: Rc<App> = Rc::new(App {
         desktop: Desktop::load(),
         config: RefCell::new(StoreConfig::load()),
