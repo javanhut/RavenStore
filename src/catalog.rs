@@ -78,9 +78,64 @@ pub const CATEGORIES: &[Category] = &[
         icon: "preferences-system-symbolic",
         blurb: "Terminals, monitors, disks and backups",
     },
+    Category {
+        id: "customization",
+        title: "Customization",
+        icon: "preferences-desktop-appearance-symbolic",
+        blurb: "Themes, icons and a prompt that looks the part",
+    },
 ];
 
 pub const ENTRIES: &[Entry] = &[
+    // Customization
+    Entry {
+        package: "nwg-look",
+        title: "nwg-look",
+        kind: "GTK Settings",
+        tagline: "Set GTK themes, icons, cursors and fonts on Wayland.",
+        icon: "preferences-desktop-appearance-symbolic",
+        category: "customization",
+    },
+    Entry {
+        package: "qt6ct",
+        title: "Qt6 Settings",
+        kind: "Qt Settings",
+        tagline: "Style, fonts and icons for Qt 6 apps.",
+        icon: "preferences-desktop-appearance-symbolic",
+        category: "customization",
+    },
+    Entry {
+        package: "kvantum",
+        title: "Kvantum",
+        kind: "Qt Theme Engine",
+        tagline: "SVG-based themes for Qt apps.",
+        icon: "preferences-desktop-appearance-symbolic",
+        category: "customization",
+    },
+    Entry {
+        package: "papirus-icon-theme",
+        title: "Papirus",
+        kind: "Icon Theme",
+        tagline: "A clean, complete icon theme.",
+        icon: "image-x-generic-symbolic",
+        category: "customization",
+    },
+    Entry {
+        package: "starship",
+        title: "Starship",
+        kind: "Shell Prompt",
+        tagline: "A fast, minimal prompt for any shell.",
+        icon: "utilities-terminal-symbolic",
+        category: "customization",
+    },
+    Entry {
+        package: "gnome-tweaks",
+        title: "Tweaks",
+        kind: "Desktop Tweaks",
+        tagline: "Fonts, themes and advanced desktop settings.",
+        icon: "preferences-other-symbolic",
+        category: "customization",
+    },
     // Web
     Entry {
         package: "firefox",
@@ -633,14 +688,141 @@ pub const ENTRIES: &[Entry] = &[
         icon: "system-search-symbolic",
         category: "system",
     },
+    Entry {
+        package: "flatseal",
+        title: "Flatseal",
+        kind: "Permissions",
+        tagline: "Manage what your Flatpak apps can reach.",
+        icon: "security-high-symbolic",
+        category: "system",
+    },
 ];
 
-/// Packages shown in the big hero cards on Discover, in order.
-pub const FEATURED: &[(&str, &str)] = &[
-    ("firefox", "Editor's Choice"),
-    ("code", "Developer Favourite"),
-    ("obs-studio", "Creator Pick"),
-    ("steam", "Play"),
+/// A hero card on Discover: the words around a featured package.
+#[derive(Debug, Clone, Copy)]
+pub struct Feature {
+    pub package: &'static str,
+    /// Under the title: "Private. Fast. Open."
+    pub headline: &'static str,
+    pub blurb: &'static str,
+    /// The line beside the artwork.
+    pub aside: &'static str,
+    /// (icon, label) pairs along the foot of the card.
+    pub chips: &'static [(&'static str, &'static str)],
+}
+
+const WORKS_ON_RAVEN: (&str, &str) = ("view-grid-symbolic", "Works Great on Raven");
+const OPEN_SOURCE: (&str, &str) = ("text-editor-symbolic", "Open Source");
+
+/// The hero carousel on Discover, in order.
+pub const FEATURED: &[Feature] = &[
+    Feature {
+        package: "firefox",
+        headline: "Private. Fast. Open.",
+        blurb: "A secure, independent web browser from Mozilla. Built for people, not profit.",
+        aside: "A more open internet for a brighter tomorrow.",
+        chips: &[
+            OPEN_SOURCE,
+            ("security-high-symbolic", "Privacy Focused"),
+            WORKS_ON_RAVEN,
+        ],
+    },
+    Feature {
+        package: "code",
+        headline: "Write. Build. Ship.",
+        blurb: "The open-source build of Visual Studio Code, ready for every language you use.",
+        aside: "Your editor, on a system you control.",
+        chips: &[
+            OPEN_SOURCE,
+            ("utilities-terminal-symbolic", "Every Language"),
+            WORKS_ON_RAVEN,
+        ],
+    },
+    Feature {
+        package: "obs-studio",
+        headline: "Record. Stream. Create.",
+        blurb: "Pro-grade recording and live streaming, free for everyone.",
+        aside: "Share what you make with the world.",
+        chips: &[
+            OPEN_SOURCE,
+            ("media-record-symbolic", "Record & Stream"),
+            WORKS_ON_RAVEN,
+        ],
+    },
+    Feature {
+        package: "steam",
+        headline: "Play Without Limits.",
+        blurb: "Thousands of games, with Proton to run Windows titles on Linux.",
+        aside: "Your library, on a system you own.",
+        chips: &[
+            ("input-gaming-symbolic", "Proton Built In"),
+            ("network-workgroup-symbolic", "Play With Friends"),
+            WORKS_ON_RAVEN,
+        ],
+    },
+];
+
+/// A group of categories as Discover presents them: the filter tabs over
+/// Popular Apps (the first six) and the Browse by Category tiles.
+#[derive(Debug, Clone, Copy)]
+pub struct Shelf {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub blurb: &'static str,
+    pub icon: &'static str,
+    pub categories: &'static [&'static str],
+}
+
+pub const SHELVES: &[Shelf] = &[
+    Shelf {
+        id: "productivity",
+        title: "Productivity",
+        blurb: "Documents, notes, mail and planning",
+        icon: "view-grid-symbolic",
+        categories: &["productivity"],
+    },
+    Shelf {
+        id: "development",
+        title: "Development",
+        blurb: "Editors, languages, version control",
+        icon: "utilities-terminal-symbolic",
+        categories: &["development"],
+    },
+    Shelf {
+        id: "media",
+        title: "Media",
+        blurb: "Players, editors, painting and 3D",
+        icon: "multimedia-player-symbolic",
+        categories: &["media", "graphics"],
+    },
+    Shelf {
+        id: "games",
+        title: "Games",
+        blurb: "Launchers, stores and emulators",
+        icon: "input-gaming-symbolic",
+        categories: &["games"],
+    },
+    Shelf {
+        id: "internet",
+        title: "Internet",
+        blurb: "Browsers, chat and video calls",
+        icon: "web-browser-symbolic",
+        categories: &["web", "communication"],
+    },
+    Shelf {
+        id: "utilities",
+        title: "Utilities",
+        blurb: "Terminals, monitors, disks and backups",
+        icon: "applications-utilities-symbolic",
+        categories: &["system"],
+    },
+    Shelf {
+        id: "customization",
+        title: "Customization",
+        blurb: "Themes, icons and a prompt that looks the part",
+        icon: "preferences-desktop-appearance-symbolic",
+        categories: &["customization"],
+    },
 ];
 
 /// The "Popular Apps" strip on Discover.
@@ -656,7 +838,7 @@ pub const POPULAR: &[&str] = &[
 ];
 
 /// The "Raven Picks" list in Discover's side panel.
-pub const PICKS: &[&str] = &["neovim", "alacritty", "btop", "keepassxc", "mpv"];
+pub const PICKS: &[&str] = &["neovim", "alacritty", "keepassxc", "obsidian", "flatseal"];
 
 pub fn category(id: &str) -> Option<&'static Category> {
     CATEGORIES.iter().find(|c| c.id == id)
@@ -668,6 +850,13 @@ pub fn entry(package: &str) -> Option<&'static Entry> {
 
 pub fn in_category(id: &str) -> Vec<&'static Entry> {
     ENTRIES.iter().filter(|e| e.category == id).collect()
+}
+
+pub fn in_categories(ids: &[&str]) -> Vec<&'static Entry> {
+    ENTRIES
+        .iter()
+        .filter(|e| ids.contains(&e.category))
+        .collect()
 }
 
 /// Curated entries whose title, package or kind matches `query`.
@@ -701,8 +890,12 @@ mod tests {
 
     #[test]
     fn featured_popular_and_picks_are_catalogued() {
-        for (p, _) in FEATURED {
-            assert!(entry(p).is_some(), "{p} is featured but not in ENTRIES");
+        for f in FEATURED {
+            assert!(
+                entry(f.package).is_some(),
+                "{} is featured but not in ENTRIES",
+                f.package
+            );
         }
         for p in POPULAR.iter().chain(PICKS.iter()) {
             assert!(entry(p).is_some(), "{p} is listed but not in ENTRIES");

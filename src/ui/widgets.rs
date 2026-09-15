@@ -13,10 +13,10 @@ use crate::catalog::Entry;
 /// A page: title, subtitle, and a vertical content box inside a scroller.
 pub fn page(title: &str, subtitle: &str) -> (gtk::ScrolledWindow, gtk::Box) {
     let content = gtk::Box::new(gtk::Orientation::Vertical, 16);
-    content.set_margin_start(30);
-    content.set_margin_end(30);
+    content.set_margin_start(26);
+    content.set_margin_end(22);
     content.set_margin_top(22);
-    content.set_margin_bottom(30);
+    content.set_margin_bottom(26);
 
     if !title.is_empty() {
         let head = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -67,19 +67,22 @@ pub fn card(title: &str, subtitle: &str) -> (gtk::Box, gtk::Box) {
     (outer, body)
 }
 
-/// "Popular Apps ............ View all"
+/// "Popular Apps ............ View All ›"
 pub fn section_header(title: &str, view_all: Option<Box<dyn Fn()>>) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    row.set_margin_top(6);
+    row.set_margin_top(10);
     let t = gtk::Label::new(Some(title));
-    t.add_css_class("section-title");
+    t.add_css_class("section-heading");
     t.set_xalign(0.0);
     t.set_hexpand(true);
     row.append(&t);
     if let Some(f) = view_all {
-        let b = gtk::Button::with_label("View all");
+        let bx = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        bx.append(&gtk::Label::new(Some("View All")));
+        bx.append(&gtk::Image::from_icon_name("go-next-symbolic"));
+        let b = gtk::Button::builder().child(&bx).build();
         b.add_css_class("flat");
-        b.add_css_class("accent");
+        b.add_css_class("view-all");
         b.connect_clicked(move |_| f());
         row.append(&b);
     }
@@ -159,8 +162,9 @@ pub fn empty_state(icon: &str, title: &str, description: &str) -> adw::StatusPag
         .build()
 }
 
-/// The best icon for a package: the app it installed, then the catalogue's
-/// hint, then a generic package glyph.
+/// The best icon for a package: the app it installed, then an icon named
+/// after the package, then the catalogue's hint, then a generic package
+/// glyph.
 pub fn icon_for(app: &App, package: &str, hint: Option<&str>, size: i32) -> gtk::Image {
     let image = if let Some(launchable) = app.launchable(package) {
         match launchable.icon.as_deref() {
@@ -168,6 +172,8 @@ pub fn icon_for(app: &App, package: &str, hint: Option<&str>, size: i32) -> gtk:
             Some(name) if theme_has(name) => gtk::Image::from_icon_name(name),
             _ => gtk::Image::from_icon_name("application-x-executable-symbolic"),
         }
+    } else if theme_has(package) {
+        gtk::Image::from_icon_name(package)
     } else if let Some(name) = hint.filter(|n| theme_has(n)) {
         gtk::Image::from_icon_name(name)
     } else {
@@ -246,7 +252,7 @@ impl CardInfo {
 pub fn action_button(app: &Rc<App>, package: &str) -> gtk::Button {
     let button = gtk::Button::new();
     button.add_css_class("action");
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     content.set_halign(gtk::Align::Center);
     let label = gtk::Label::new(None);
     let icon = gtk::Image::new();
@@ -311,19 +317,65 @@ pub fn heart_button(app: &Rc<App>, package: &str) -> gtk::Button {
     b
 }
 
-/// An app tile. Clicking the tile opens the detail view; the button acts.
+/// The line under a tile's name. rvn reports no star ratings, so this
+/// says what is known instead: installed or updatable, the AUR's
+/// popularity score, the official repository, or a place in the catalogue.
+pub fn meta_line(app: &App, info: &CardInfo) -> gtk::Box {
+    let (glyph, class, text, tooltip) = match app.status(&info.package) {
+        Status::Updatable { .. } => ("\u{2191}", "update", "Update available".to_string(), None),
+        Status::Installed { .. } => ("\u{2713}", "installed", "Installed".to_string(), None),
+        Status::NotInstalled if info.aur => (
+            "\u{25B2}",
+            "aur",
+            if info.popularity > 0.0 {
+                format!("{:.1} · AUR", info.popularity)
+            } else {
+                "AUR".to_string()
+            },
+            Some("Arch User Repository — the number is its popularity score"),
+        ),
+        Status::NotInstalled if !info.origin.is_empty() => (
+            "\u{2713}",
+            "official",
+            format!("Official · {}", info.origin),
+            Some("From the official repositories"),
+        ),
+        Status::NotInstalled => (
+            "\u{2605}",
+            "curated",
+            "Raven catalogue".to_string(),
+            Some("Chosen for the Raven Store catalogue"),
+        ),
+    };
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    row.add_css_class("app-meta");
+    row.add_css_class(class);
+    let g = gtk::Label::new(Some(glyph));
+    g.add_css_class("glyph");
+    row.append(&g);
+    let t = gtk::Label::new(Some(&text));
+    t.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    row.append(&t);
+    row.set_tooltip_text(tooltip);
+    row
+}
+
+/// An app tile: icon, name and kind, then what is known about it beside
+/// the action button. Clicking the tile opens the detail view.
 pub fn app_card(app: &Rc<App>, info: &CardInfo) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let card = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     card.add_css_class("app-card");
 
-    let top = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     let well = icon_well(app, &info.package);
-    let icon = icon_for(app, &info.package, info.icon.as_deref(), 36);
+    well.set_valign(gtk::Align::Center);
+    let icon = icon_for(app, &info.package, info.icon.as_deref(), 34);
     icon.add_css_class("app-icon");
+    icon.set_vexpand(true);
+    icon.set_valign(gtk::Align::Center);
     well.append(&icon);
-    top.append(&well);
+    card.append(&well);
 
-    let text = gtk::Box::new(gtk::Orientation::Vertical, 1);
+    let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
     text.set_hexpand(true);
     text.set_valign(gtk::Align::Center);
     let name = gtk::Label::new(Some(&info.title));
@@ -332,44 +384,30 @@ pub fn app_card(app: &Rc<App>, info: &CardInfo) -> gtk::Box {
     name.set_ellipsize(gtk::pango::EllipsizeMode::End);
     // Bound the natural width, or one long package name widens every tile
     // in a homogeneous grid and the row collapses to a single column.
-    name.set_max_width_chars(16);
+    name.set_max_width_chars(18);
     text.append(&name);
     let kind = gtk::Label::new(Some(&info.kind));
     kind.add_css_class("app-kind");
     kind.set_xalign(0.0);
     kind.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    kind.set_max_width_chars(18);
+    kind.set_max_width_chars(20);
     text.append(&kind);
-    top.append(&text);
-    top.append(&heart_button(app, &info.package));
-    card.append(&top);
 
-    let meta = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    match app.status(&info.package) {
-        Status::Updatable { .. } => meta.append(&badge("update", "update")),
-        Status::Installed { .. } => meta.append(&badge("installed", "installed")),
-        Status::NotInstalled => {}
-    }
-    if !info.origin.is_empty() {
-        meta.append(&origin_badge(&info.origin, info.aur));
-    } else if let Some(e) = crate::catalog::entry(&info.package) {
-        // Curated entries only know their package name; the badge appears
-        // once a search or the detail view has told us where it lives.
-        let _ = e;
-    }
-    if info.popularity > 0.0 {
-        let p = gtk::Label::new(Some(&format!("▲ {:.1}", info.popularity)));
-        p.add_css_class("app-kind");
-        p.set_tooltip_text(Some("AUR popularity"));
-        meta.append(&p);
-    }
-    if meta.first_child().is_some() {
-        card.append(&meta);
-    }
-
+    let bottom = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    bottom.set_margin_top(8);
+    let meta = meta_line(app, info);
+    meta.set_hexpand(true);
+    meta.set_valign(gtk::Align::Center);
+    bottom.append(&meta);
     let action = action_button(app, &info.package);
-    action.set_hexpand(true);
-    card.append(&action);
+    // The tile is compact: the word alone, no glyph.
+    if let Some(glyph) = action.child().and_then(|c| c.last_child()) {
+        glyph.set_visible(false);
+    }
+    action.set_valign(gtk::Align::Center);
+    bottom.append(&action);
+    text.append(&bottom);
+    card.append(&text);
 
     // The tile itself opens the detail view. Buttons claim their own clicks
     // first, so this only fires on the card body.

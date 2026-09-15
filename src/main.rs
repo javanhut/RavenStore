@@ -1,6 +1,7 @@
 mod backend;
 mod catalog;
 mod config;
+mod ranking;
 mod ui;
 
 fn main() -> glib::ExitCode {

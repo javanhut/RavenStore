@@ -42,6 +42,8 @@ pub struct Package {
     pub depends: Vec<String>,
     pub optdepends: Vec<String>,
     pub required_by: Vec<String>,
+    /// Package groups, e.g. `firefox-addons`.
+    pub groups: Vec<String>,
     pub popularity: f64,
     pub out_of_date: bool,
     /// Installed by name rather than as a dependency. Only meaningful for
@@ -79,6 +81,7 @@ impl Package {
             depends: strings(&v["depends"]),
             optdepends: strings(&v["optdepends"]),
             required_by: strings(&v["required_by"]),
+            groups: strings(&v["groups"]),
             popularity: v["popularity"].as_f64().unwrap_or(0.0),
             out_of_date: v["out_of_date"].as_bool().unwrap_or(false),
             explicit: v["explicit"].as_bool().unwrap_or(true),

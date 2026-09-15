@@ -6,13 +6,22 @@ use std::rc::Rc;
 use gtk4 as gtk;
 use libadwaita::prelude::*;
 
-use crate::catalog;
+use crate::catalog::{self, Shelf};
 use crate::ui::widgets::{self, CardInfo};
 use crate::ui::App;
 
+/// What the list view is showing: one category, or a shelf gathering
+/// several.
+#[derive(Clone, Copy)]
+struct Listing {
+    title: &'static str,
+    blurb: &'static str,
+    categories: &'static [&'static str],
+}
+
 thread_local! {
     static PAGE: RefCell<Option<(gtk::Stack, gtk::Label, gtk::Label, gtk::FlowBox)>> = const { RefCell::new(None) };
-    static CURRENT: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+    static CURRENT: RefCell<Option<Listing>> = const { RefCell::new(None) };
 }
 
 pub fn build(app: &Rc<App>) -> gtk::Widget {
@@ -78,7 +87,7 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
     text.append(&blurb);
     head.append(&text);
     list_content.append(&head);
-    let cards = widgets::flow(4);
+    let cards = widgets::flow(3);
     list_content.append(&cards);
     stack.add_named(&list_root, Some("list"));
 
@@ -90,7 +99,32 @@ pub fn build(app: &Rc<App>) -> gtk::Widget {
 
 /// Jump to one category, from anywhere.
 pub fn open(app: &Rc<App>, id: &'static str) {
-    CURRENT.with(|c| *c.borrow_mut() = Some(id));
+    if let Some(cat) = catalog::category(id) {
+        show(
+            app,
+            Listing {
+                title: cat.title,
+                blurb: cat.blurb,
+                categories: std::slice::from_ref(&cat.id),
+            },
+        );
+    }
+}
+
+/// Jump to a shelf from Discover: every app in its categories.
+pub fn open_shelf(app: &Rc<App>, shelf: &'static Shelf) {
+    show(
+        app,
+        Listing {
+            title: shelf.title,
+            blurb: shelf.blurb,
+            categories: shelf.categories,
+        },
+    );
+}
+
+fn show(app: &Rc<App>, listing: Listing) {
+    CURRENT.with(|c| *c.borrow_mut() = Some(listing));
     refill(app);
     PAGE.with(|p| {
         if let Some((stack, _, _, _)) = p.borrow().as_ref() {
@@ -101,18 +135,15 @@ pub fn open(app: &Rc<App>, id: &'static str) {
 }
 
 fn refill(app: &Rc<App>) {
-    let Some(id) = CURRENT.with(|c| *c.borrow()) else {
-        return;
-    };
-    let Some(cat) = catalog::category(id) else {
+    let Some(listing) = CURRENT.with(|c| *c.borrow()) else {
         return;
     };
     PAGE.with(|p| {
         if let Some((_, title, blurb, cards)) = p.borrow().as_ref() {
-            title.set_text(cat.title);
-            blurb.set_text(cat.blurb);
+            title.set_text(listing.title);
+            blurb.set_text(listing.blurb);
             widgets::clear_flow(cards);
-            for e in catalog::in_category(id) {
+            for e in catalog::in_categories(listing.categories) {
                 cards.insert(&widgets::app_card(app, &CardInfo::from_entry(e)), -1);
             }
         }

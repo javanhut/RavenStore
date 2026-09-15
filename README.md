@@ -25,8 +25,8 @@ says so — with the fix — instead of attempting the change.
 
 ## Pages
 
-- **Discover** — featured apps, popular picks, a couple of categories and the
-  pending updates at a glance.
+- **Discover** — a featured carousel, popular apps filtered by category,
+  browse by category, and a side panel with pending updates and Raven Picks.
 - **Categories** — the curated catalogue (`src/catalog.rs`), grouped.
 - **Installed** — explicitly installed packages with Open and Remove; the
   Settings page can include dependencies too.
@@ -40,7 +40,13 @@ says so — with the fix — instead of attempting the change.
 - **Wishlist** — packages you hearted, kept in `~/.config/raven/store.toml`.
 - **Settings** — official-repositories-only mode, refresh-on-launch, and buttons
   to run the same operations in a terminal instead.
-- **Search** (Ctrl+K) — the repositories and the AUR, with curated matches first.
+- **Search** (Ctrl+K) — the repositories and the AUR, in two groups:
+  applications first, then packages (libraries, plugins, language packs and
+  other parts usually installed as dependencies), so a search for `firefox`
+  offers the browser before its add-ons. rvn reports no star ratings, so each
+  group is ordered by the signals it does give: exact match, curated
+  catalogue, official repositories over the AUR, then AUR popularity
+  (`src/ranking.rs`).
 
 Icons: an installed app shows its own icon from its desktop entry. Until then a
 symbolic glyph tinted by category stands in, because the image does not ship
