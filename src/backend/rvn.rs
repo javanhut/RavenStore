@@ -290,6 +290,9 @@ impl Transaction {
     pub fn remove(names: &[String]) -> Transaction {
         let mut args = global(false);
         args.push("uninstall".into());
+        // The store shows no removal plan, so it takes only what the user
+        // picked. rvn refuses an unreviewed orphan sweep under `-y` anyway.
+        args.push("--keep-orphans".into());
         args.extend(names.iter().cloned());
         Transaction {
             title: format!("Removing {}", join(names)),
@@ -648,6 +651,8 @@ mod tests {
         assert_eq!(one.args, vec!["install", "vlc"]);
         let many = Transaction::remove(&["a".into(), "b".into(), "c".into()]);
         assert_eq!(many.title, "Removing a and 2 more");
+        // No plan is shown, so nothing beyond the picks may go.
+        assert_eq!(many.args, vec!["uninstall", "--keep-orphans", "a", "b", "c"]);
         let all = Transaction::update(&[], true);
         assert_eq!(all.args, vec!["--repo-only", "update"]);
         assert!(all.privileged);
