@@ -311,6 +311,26 @@ window.raven, window.raven.glass { background-image: none; }
 .app-card { background-color: alpha(#ffffff, 0.72); border-color: alpha(#000000, 0.07); }
 .app-card button.action, .app-card button.action.suggested-action { color: @window_fg_color; }
 button.browse-tile, button.more-button { background-color: alpha(#ffffff, 0.72); border-color: alpha(#000000, 0.08); }
+window.raven { background-color: @window_bg_color; }
+.icon-well, .icon-well.system { background-color: alpha(#000000, 0.05); box-shadow: none; }
+.icon-well.real { background-color: transparent; }
+/* The shared light sheet's plain `button` rules sit in a higher provider
+   than the store's own, so the buttons the store draws are restated. */
+headerbar.store-header windowcontrols button,
+.filter-tabs button { background-color: transparent; border-color: transparent; box-shadow: none; }
+headerbar.store-header windowcontrols button:hover,
+.filter-tabs button:hover { background-color: alpha(#000000, 0.06); }
+.filter-tabs button:checked { background-color: alpha(@accent_bg_color, 0.16); border-color: alpha(@accent_bg_color, 0.50); }
+.app-card button.action, .app-card button.action.suggested-action,
+button.round-download {
+  background-color: alpha(@accent_bg_color, 0.12);
+  border-color: alpha(@accent_bg_color, 0.45);
+  box-shadow: none;
+}
+.app-card button.action:hover, button.round-download:hover { background-color: alpha(@accent_bg_color, 0.24); }
+.hero button.hero-primary, .side-card button.update-all { background-color: @accent_bg_color; border-color: transparent; }
+.hero button.hero-secondary { background-color: alpha(#0b1020, 0.35); border-color: alpha(#ffffff, 0.22); box-shadow: none; }
+.hero button.hero-secondary:hover { background-color: alpha(#ffffff, 0.10); }
 "#
 );
 
@@ -368,6 +388,66 @@ pub fn apply(window: Option<&adw::ApplicationWindow>, mode: ThemeMode, accent: &
         );
         *slot.borrow_mut() = Some(provider);
     });
+}
+
+thread_local! {
+    /// Kept alive for as long as the app runs; dropping it stops the watch.
+    static DESKTOP_MONITOR: std::cell::RefCell<Option<gtk::gio::FileMonitor>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// How long `desktop.toml` has to stay quiet before it is read again: one
+/// save from Settings arrives as a burst of events.
+const DESKTOP_SETTLE: std::time::Duration = std::time::Duration::from_millis(150);
+
+/// Follow Settings: re-read `desktop.toml` whenever it changes and restyle
+/// `window`. The directory is watched, not the file, because Settings replaces
+/// the file by rename and it may not exist yet.
+pub fn watch_desktop(window: &adw::ApplicationWindow) {
+    use gtk::{gio, glib};
+    use std::{cell::RefCell, rc::Rc};
+
+    let path = crate::config::Desktop::path();
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return;
+    };
+    let name = name.to_os_string();
+    let Ok(monitor) = gio::File::for_path(dir)
+        .monitor_directory(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
+    else {
+        return;
+    };
+    let window = window.downgrade();
+    let pending: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+    monitor.connect_changed(move |_, file, other, event| {
+        if matches!(
+            event,
+            gio::FileMonitorEvent::AttributeChanged
+                | gio::FileMonitorEvent::PreUnmount
+                | gio::FileMonitorEvent::Unmounted
+        ) {
+            return;
+        }
+        let names_desktop = |f: Option<&gio::File>| {
+            f.and_then(|f| f.basename())
+                .is_some_and(|b| b.as_os_str() == name.as_os_str())
+        };
+        if !names_desktop(Some(file)) && !names_desktop(other) {
+            return;
+        }
+        if let Some(id) = pending.borrow_mut().take() {
+            id.remove();
+        }
+        let fired = pending.clone();
+        let window = window.clone();
+        let id = glib::timeout_add_local_once(DESKTOP_SETTLE, move || {
+            fired.borrow_mut().take();
+            let a = crate::config::Desktop::load().appearance;
+            apply(window.upgrade().as_ref(), a.theme_mode, &a.accent, a.transparency);
+        });
+        *pending.borrow_mut() = Some(id);
+    });
+    DESKTOP_MONITOR.with(|m| *m.borrow_mut() = Some(monitor));
 }
 
 pub fn is_hex(s: &str) -> bool {
