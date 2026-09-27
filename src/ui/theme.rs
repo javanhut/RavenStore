@@ -334,6 +334,13 @@ button.round-download {
 "#
 );
 
+/// Laid under the glass tint when the glass theme is not black: the store's
+/// own night-blue ground gives way to the theme's, as it does to light.
+const TINT_CSS: &str = r#"
+window.raven, window.raven.glass { background-image: none; }
+window.raven { background-color: @window_bg_color; }
+"#;
+
 pub fn load_base() {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(BASE_CSS);
@@ -349,8 +356,15 @@ thread_local! {
     static ACCENT_PROVIDER: std::cell::RefCell<Option<gtk::CssProvider>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Point every `@accent_bg_color` at the chosen hex, and set light/dark.
-pub fn apply(window: Option<&adw::ApplicationWindow>, mode: ThemeMode, accent: &str, glass: bool) {
+/// Point every `@accent_bg_color` at the chosen hex, set light/dark, and
+/// tint the glass to the chosen glass theme.
+pub fn apply(
+    window: Option<&adw::ApplicationWindow>,
+    mode: ThemeMode,
+    accent: &str,
+    glass: bool,
+    glass_theme: &str,
+) {
     if let Some(w) = window {
         if glass {
             w.add_css_class("glass");
@@ -370,9 +384,11 @@ pub fn apply(window: Option<&adw::ApplicationWindow>, mode: ThemeMode, accent: &
         crate::config::DEFAULT_ACCENT
     };
     let light = matches!(mode, ThemeMode::Light);
+    let tint = crate::glass_tint::css(glass_theme, light);
     let css = format!(
-        "@define-color accent_bg_color {accent};\n@define-color accent_color {accent};\n{}",
-        if light { LIGHT_CSS } else { "" }
+        "@define-color accent_bg_color {accent};\n@define-color accent_color {accent};\n{}{}{tint}",
+        if light { LIGHT_CSS } else { "" },
+        if tint.is_empty() { "" } else { TINT_CSS },
     );
     let display = gtk::gdk::Display::default().expect("no display");
     ACCENT_PROVIDER.with(|slot| {
@@ -443,7 +459,13 @@ pub fn watch_desktop(window: &adw::ApplicationWindow) {
         let id = glib::timeout_add_local_once(DESKTOP_SETTLE, move || {
             fired.borrow_mut().take();
             let a = crate::config::Desktop::load().appearance;
-            apply(window.upgrade().as_ref(), a.theme_mode, &a.accent, a.transparency);
+            apply(
+                window.upgrade().as_ref(),
+                a.theme_mode,
+                &a.accent,
+                a.transparency,
+                &a.glass_theme,
+            );
         });
         *pending.borrow_mut() = Some(id);
     });

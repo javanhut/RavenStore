@@ -321,11 +321,23 @@ pub fn run(start_page: &'static str) -> glib::ExitCode {
         }
         theme::load_base();
         let a = &app.desktop.appearance;
-        theme::apply(None, a.theme_mode, &a.accent, a.transparency);
+        theme::apply(
+            None,
+            a.theme_mode,
+            &a.accent,
+            a.transparency,
+            &a.glass_theme,
+        );
         let (window, nav, stack) = window::build(gtk_app, &app);
         *app.window.borrow_mut() = Some(window.clone());
         *app.nav.borrow_mut() = Some((nav, stack));
-        theme::apply(Some(&window), a.theme_mode, &a.accent, a.transparency);
+        theme::apply(
+            Some(&window),
+            a.theme_mode,
+            &a.accent,
+            a.transparency,
+            &a.glass_theme,
+        );
         theme::watch_desktop(&window);
         window.present();
         app.navigate(start_page);

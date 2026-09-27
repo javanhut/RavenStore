@@ -1,6 +1,7 @@
 mod backend;
 mod catalog;
 mod config;
+mod glass_tint;
 mod ranking;
 mod ui;
 
