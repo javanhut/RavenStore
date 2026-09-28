@@ -1,5 +1,5 @@
-//! The look: Raven Glass — the stylesheet shared with Settings and Power
-//! (`data/raven-glass.css`, kept identical across the three repos) plus the
+//! The look: Raven Glass — the stylesheet every Raven app shares (the
+//! raven-glass crate in RavenGUI, read from /usr/share/raven/glass/) plus the
 //! store's own classes — the shell, hero cards, app tiles, the side panel.
 
 use gtk::prelude::*;
@@ -8,9 +8,8 @@ use libadwaita as adw;
 
 use crate::config::ThemeMode;
 
-pub const BASE_CSS: &str = concat!(
-    include_str!("../../data/raven-glass.css"),
-    r#"
+/// What only the store draws, laid over Raven Glass.
+pub const STORE_CSS: &str = r#"
 /* ── Raven Store ─────────────────────────────────────────────────────── */
 
 /* The ground: deep night blue, a little lighter toward the top left. */
@@ -295,12 +294,10 @@ button.pick-row { padding: 8px 6px; border-radius: 10px; }
   border-radius: 10px; padding: 8px;
 }
 .tx-log text { background-color: transparent; }
-"#
-);
+"#;
 
-const LIGHT_CSS: &str = concat!(
-    include_str!("../../data/raven-glass-light.css"),
-    r#"
+/// The store's own light overrides, laid over Raven Glass's light sheet.
+const STORE_LIGHT_CSS: &str = r#"
 .tx-log { background-color: alpha(#000000, 0.06); border-color: alpha(#000000, 0.08); }
 window.raven, window.raven.glass { background-image: none; }
 .top-search { background-color: alpha(#ffffff, 0.80); border-color: alpha(#000000, 0.10); }
@@ -331,8 +328,7 @@ button.round-download {
 .hero button.hero-primary, .side-card button.update-all { background-color: @accent_bg_color; border-color: transparent; }
 .hero button.hero-secondary { background-color: alpha(#0b1020, 0.35); border-color: alpha(#ffffff, 0.22); box-shadow: none; }
 .hero button.hero-secondary:hover { background-color: alpha(#ffffff, 0.10); }
-"#
-);
+"#;
 
 /// Laid under the glass tint when the glass theme is not black: the store's
 /// own night-blue ground gives way to the theme's, as it does to light.
@@ -343,7 +339,7 @@ window.raven { background-color: @window_bg_color; }
 
 pub fn load_base() {
     let provider = gtk::CssProvider::new();
-    provider.load_from_string(BASE_CSS);
+    provider.load_from_string(&format!("{}{STORE_CSS}", raven_glass::base_css()));
     let display = gtk::gdk::Display::default().expect("no display");
     gtk::style_context_add_provider_for_display(
         &display,
@@ -384,10 +380,11 @@ pub fn apply(
         crate::config::DEFAULT_ACCENT
     };
     let light = matches!(mode, ThemeMode::Light);
-    let tint = crate::glass_tint::css(glass_theme, light);
+    let tint = raven_glass::tint::css(glass_theme, light);
     let css = format!(
-        "@define-color accent_bg_color {accent};\n@define-color accent_color {accent};\n{}{}{tint}",
-        if light { LIGHT_CSS } else { "" },
+        "@define-color accent_bg_color {accent};\n@define-color accent_color {accent};\n{}{}{}{tint}",
+        if light { raven_glass::light_css() } else { "" },
+        if light { STORE_LIGHT_CSS } else { "" },
         if tint.is_empty() { "" } else { TINT_CSS },
     );
     let display = gtk::gdk::Display::default().expect("no display");
