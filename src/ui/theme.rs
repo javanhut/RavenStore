@@ -294,6 +294,11 @@ button.pick-row { padding: 8px 6px; border-radius: 10px; }
   border-radius: 10px; padding: 8px;
 }
 .tx-log text { background-color: transparent; }
+/* The scrim behind a dialog. libadwaita's is half-opaque black, which over
+   the store's near-black ground blots the window out entirely, so a progress
+   dialog looked like a small card floating in an empty black window. Light
+   enough that the store still shows through as the thing being waited on. */
+floating-sheet > dimming { background-color: alpha(#000006, 0.22); }
 "#;
 
 /// The store's own light overrides, laid over Raven Glass's light sheet.

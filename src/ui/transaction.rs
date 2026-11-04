@@ -28,6 +28,7 @@ struct View {
     summary: gtk::Label,
     log: gtk::TextBuffer,
     log_view: gtk::TextView,
+    header: adw::HeaderBar,
     close: gtk::Button,
     /// Names rvn resolved, for the toast at the end.
     touched: RefCell<Vec<String>>,
@@ -63,7 +64,13 @@ fn build_view(app: &Rc<App>, tx: &Transaction) -> View {
     dialog.set_can_close(false);
 
     let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&adw::HeaderBar::new());
+    // No × while rvn runs: the dialog cannot close then (stopping a
+    // transaction halfway would leave the system half-updated), and a close
+    // button that does nothing when pressed reads as a hang. It comes back
+    // with the Close button when rvn exits.
+    let header = adw::HeaderBar::new();
+    header.set_show_end_title_buttons(false);
+    toolbar.add_top_bar(&header);
     let body = gtk::Box::new(gtk::Orientation::Vertical, 12);
     body.set_margin_start(20);
     body.set_margin_end(20);
@@ -125,7 +132,9 @@ fn build_view(app: &Rc<App>, tx: &Transaction) -> View {
     buttons.set_halign(gtk::Align::End);
     let close = gtk::Button::with_label("Close");
     close.add_css_class("pill");
-    close.set_sensitive(false);
+    // Shown once there is something to close; a greyed-out Close for the
+    // whole run only invites clicks that do nothing.
+    close.set_visible(false);
     let d2 = dialog.clone();
     close.connect_clicked(move |_| {
         d2.set_can_close(true);
@@ -144,6 +153,7 @@ fn build_view(app: &Rc<App>, tx: &Transaction) -> View {
         summary,
         log,
         log_view,
+        header,
         close,
         touched: RefCell::new(Vec::new()),
         failure: RefCell::new(None),
@@ -162,10 +172,12 @@ impl View {
     fn handle(&self, event: Event) {
         match event {
             Event::Stage(m) => {
+                self.drop_finished_progress();
                 self.stage.set_text(&m);
                 self.append_log(&format!("▸ {m}"));
             }
             Event::StageDone { message, ok } => {
+                self.drop_finished_progress();
                 self.stage.set_text(&message);
                 self.append_log(&format!("{} {message}", if ok { "✔" } else { "✖" }));
             }
@@ -197,7 +209,9 @@ impl View {
                 }
             }
             Event::ProgressDone { message } => {
-                self.progress.set_fraction(1.0);
+                // Done is done: a full bar left standing would caption
+                // whatever stage comes next with this one's count.
+                self.progress.set_visible(false);
                 self.stage.set_text(&message);
                 self.append_log(&format!("✔ {message}"));
             }
@@ -216,6 +230,7 @@ impl View {
                     self.summary.set_text(&text);
                 }
                 if kind == "step" {
+                    self.drop_finished_progress();
                     self.stage.set_text(&text);
                 }
             }
@@ -273,6 +288,18 @@ impl View {
         }
     }
 
+    /// Hide a progress bar whose count has run out once the next stage
+    /// begins. rvn does not always close a bar with `progress_done` before
+    /// moving on, and a stage with no count of its own (compiling an AUR
+    /// package, say) would otherwise sit under the last stage's
+    /// "installing · 5132 / 5132 files". A bar still counting is left alone:
+    /// a spinner's message can change while its stage's bar fills.
+    fn drop_finished_progress(&self) {
+        if self.progress.is_visible() && self.progress.fraction() >= 1.0 {
+            self.progress.set_visible(false);
+        }
+    }
+
     fn finish(&self, success: bool, message: &str) {
         self.spinner.stop();
         self.spinner.set_visible(false);
@@ -286,8 +313,9 @@ impl View {
             .add_css_class(if success { "success" } else { "error" });
         self.stage.set_text(message);
         self.progress.set_visible(false);
-        self.close.set_sensitive(true);
+        self.close.set_visible(true);
         self.close.add_css_class("suggested-action");
+        self.header.set_show_end_title_buttons(true);
         self.dialog.set_can_close(true);
     }
 }
